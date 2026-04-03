@@ -1,0 +1,91 @@
+{
+"name": "Warehouse Main Workflow",
+"nodes": [
+{
+"parameters": {
+"path": "inventory",
+"httpMethod": "POST",
+"responseMode": "onReceived"
+},
+"name": "Webhook",
+"type": "n8n-nodes-base.webhook",
+"position": [200, 300]
+},
+{
+"parameters": {
+"functionCode": "const { item_name, operation, quantity } = $json;\nif (!item_name || !operation || !quantity) throw new Error('Missing fields');\nreturn [{ json: { item_name, operation, quantity } }];"
+},
+"name": "Validate Input",
+"type": "n8n-nodes-base.function",
+"position": [400, 300]
+},
+{
+"parameters": {
+"operation": "executeQuery",
+"query": "SELECT * FROM inventory WHERE item_name = {{$json.item_name}};"
+},
+"name": "Get Item",
+"type": "n8n-nodes-base.postgres",
+"position": [600, 300]
+},
+{
+"parameters": {
+"conditions": {
+"string": [
+{
+"value1": "={{$json.operation}}",
+"operation": "equal",
+"value2": "outbound"
+}
+]
+}
+},
+"name": "Check Operation",
+"type": "n8n-nodes-base.if",
+"position": [800, 300]
+},
+{
+"parameters": {
+"functionCode": "const stock = $json.stock_level || 0;\nconst qty = $json.quantity;\nif (qty > stock) {\n  return [{ json: { error: true, message: `Insufficient stock. Available: ${stock}` } }];\n}\nreturn items;"
+},
+"name": "Validate Stock",
+"type": "n8n-nodes-base.function",
+"position": [1000, 200]
+},
+{
+"parameters": {
+"operation": "executeQuery",
+"query": "UPDATE inventory SET stock_level = stock_level - {{$json.quantity}} WHERE item_name = {{$json.item_name}} RETURNING *;"
+},
+"name": "Outbound Update",
+"type": "n8n-nodes-base.postgres",
+"position": [1200, 200]
+},
+{
+"parameters": {
+"operation": "executeQuery",
+"query": "UPDATE inventory SET stock_level = stock_level + {{$json.quantity}} WHERE item_name = {{$json.item_name}} RETURNING *;"
+},
+"name": "Inbound Update",
+"type": "n8n-nodes-base.postgres",
+"position": [1000, 400]
+},
+{
+"parameters": {
+"operation": "executeQuery",
+"query": "INSERT INTO order_logs (item_name, action, quantity) VALUES ({{$json.item_name}}, {{$json.operation}}, {{$json.quantity}});"
+},
+"name": "Log Operation",
+"type": "n8n-nodes-base.postgres",
+"position": [1400, 300]
+},
+{
+"parameters": {
+"functionCode": "return [{ json: { success: true, message: 'Operation completed' } }];"
+},
+"name": "Response",
+"type": "n8n-nodes-base.function",
+"position": [1600, 300]
+}
+]
+}
